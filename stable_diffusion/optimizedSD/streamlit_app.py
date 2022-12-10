@@ -48,7 +48,8 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = int(st.sidebar.text_input('Rate', 16000))
 p = pyaudio.PyAudio()
-TRANSCRIPTION_OUTPUT_PATH = "./outputs/transcription_output.txt"
+TRANSCRIPTION_OUTPUT_PATH = "../transcription_output.txt"
+STYLES=",chinese inkbrush,stylised,concept"
 
 #############
 # Functions #
@@ -72,6 +73,7 @@ def stop_listening():
 # Send audio (Input) / Receive transcription (Output)
 async def send_receive():
 	URL = f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={RATE}"
+	# 4290d114-9578-4d4c-b44b-ac28e61393d9
 
 	print(f'Connecting websocket to url ${URL}')
 
@@ -142,24 +144,18 @@ async def send_receive():
 
 				except websockets.exceptions.ConnectionClosedError as e:
 					print(e)
-					await _ws.send({
-						"terminate_session":True	
-					})
+					
 					assert e.code == 4008
 					break
 
 				except Exception as e:
-					print(e)
-					print("Terminating session...s")
-					_ws.send({
-						"terminate_session":True	
-					})
+					print(e)	
 					assert False, "Not a websocket 4008 error"
 			
 		send_result, receive_result = await asyncio.gather(send(), receive())
-		await _ws.send({
-						"terminate_session":True	
-					})
+	# await _ws.send(json.dumps({
+	# 				"terminate_session":True
+	# 			}))
 
 def chunk(it, size):
     it = iter(it)
@@ -346,6 +342,8 @@ def generate_img(prompt:str):
 			+ seeds[:-1]
 		).format(time_taken)
 	)
+	os.remove('../transcription_output.txt')
+	st.stop()
 	
 ###########
 # Classes #
@@ -407,7 +405,8 @@ st.title('🎙️ AssemblyAI Hackathon Real-Time Speech to Image Generation App'
 
 with st.expander('About this App'):
 	st.markdown('''
-	This Streamlit app uses the AssemblyAI API to perform real-time transcription.
+	This Streamlit app uses the AssemblyAI API to perform real-time transcription.The transcribed text 
+	then has its keywords extracted and an image is then generated using the extracted keywords
 	
 	Libraries used:
 	- `streamlit` - web framework
@@ -431,7 +430,7 @@ asyncio.run(send_receive())
 # 	generate_img()
 # Runs after the stop button is pressed
 # Checks for the presence of the transcription
-print("RUNINGGGGGGG")
+print("Checking for transcription.txt...")
 if Path('transcription.txt').is_file():
 	st.markdown('### Download')
 	download_transcription()
@@ -440,10 +439,30 @@ if Path('transcription.txt').is_file():
 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
 		doc = f.readlines()
 	kw_extractor = KeyBERT()
-	keywords = kw_extractor.extract_keywords(doc)
+	# keywords are in the format [("keyword",prob),("keyword",prob),("keyword",prob)]
+	extracted = kw_extractor.extract_keywords(doc)
+	keywords_list = []
+	for keyword in extracted:
+		keywords_list.append(keyword[0])
+	keywords = " ".join(keywords_list)	
+	keywords+= STYLES
+	print("KEYWORDS ARE....")
+	print(keywords)
 	generate_img(prompt=keywords)
 
-
-# References (Code modified and adapted from the following)
-# 1. https://github.com/misraturp/Real-time-transcription-from-microphone
-# 2. https://medium.com/towards-data-science/real-time-speech-recognition-python-assemblyai-13d35eeed226
+# print("Checking for transcription_output.txt...")	
+# if Path('../transcription_output.txt').is_file():
+# 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
+# 		doc = f.readlines()
+# 	kw_extractor = KeyBERT()
+# 	# keywords are in the format [("keyword",prob),("keyword",prob),("keyword",prob)]
+# 	extracted = kw_extractor.extract_keywords(doc)
+# 	keywords_list = []
+# 	for keyword in extracted:
+# 		keywords_list.append(keyword[0])
+# 	keywords = " ".join(keywords_list)	
+# 	keywords+= STYLES
+# 	print("KEYWORDS ARE....")
+# 	print(keywords)
+# 	generate_img(prompt=keywords)
+	
