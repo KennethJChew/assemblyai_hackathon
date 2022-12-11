@@ -55,9 +55,8 @@ p = pyaudio.PyAudio()
 TRANSCRIPTION_PATH = "./transcription.txt"
 TRANSCRIPTION_OUTPUT_PATH = "./transcription_output.txt"
 SUMMARISED_TEXT = "./summarised.txt"
-STYLES=",chinese_inkbrush,stylised,concept"
-# print(f"Resseting connections list")
-# CONNECTIONS = []
+STYLES=",stylised,concept,infographic,professional"
+
 #############
 # Functions #
 #############
@@ -73,46 +72,6 @@ def download_transcription():
 		# file_name=TRANSCRIPTION_OUTPUT_PATH,
 		file_name='transcription_output.txt',
 		mime='text/plain')
-	
-	# st.text("Transcription downloaded!")
-	# os.remove('transcription.txt')
-
-	# st.write("Processing transcription....")
-	
-	# print("Checking for transcription_output.txt...")	
-	# if Path('../_transcription_output.txt').is_file():
-	# 	print("transcription output found")
-	# 	# read the transcipted prompt
-	# 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
-	# 		doc = f.readlines()
-	# 	print(f"DOC:{doc}")
-	# 	print(f"DOC shape:{np.shape(doc)}")
-	# 	kw_extractor = KeyBERT()
-	# 	# keywords are in the format [[("keyword",prob),("keyword",prob),("keyword",prob)]]
-	# 	extracted = kw_extractor.extract_keywords(doc)
-	# 	print(f"EXTRACTED shape:{len(np.shape(extracted))}")
-	# 	keywords_list = []
-	# 	print(f"EXTRACTED :\n{extracted}")
-	# 	for keyword in extracted:
-	# 		print(f"KEYWORD:{keyword}, LENGTH:{len(keyword)}")
-	# 		if len(keyword)> 0:
-	# 			keywords_list.append(keyword[0])
-	# 	keywords = " ".join(keywords_list)	
-	# 	keywords+= STYLES
-	# 	print("KEYWORDS ARE....")
-	# 	print(keywords)
-	# 	# Summariser the transcribed text
-	# 	text = " ".join(doc)
-	# 	summariser = Summarizer()
-	# 	print(f"TRANSCRIBED TEXT IS :{text}")
-	# 	print("\n")
-	# 	# edit ratio to change how much the text is summarised
-	# 	summarised_doc = summariser(text,ratio=0.3)
-		
-	# 	print(f"SUMMARISED TEXT IS :{summarised_doc}")
-	# 	# Use Stable Diffusion to generate keywords
-	# 	generate_img(prompt=keywords)
-	# 	os.remove(TRANSCRIPTION_OUTPUT_PATH)
 
 def stop_listening():
 	st.session_state['run'] = False
@@ -581,42 +540,4 @@ if Path(TRANSCRIPTION_PATH).is_file():
 
 st.button("Click this after you have downloaded your transcription",on_click=prep_generation())
 
-# print("Checking for transcription_output.txt...")	
-# if Path(TRANSCRIPTION_OUTPUT_PATH).is_file():
-# 	print("transcription output found")
 
-# 	# read the transcipted prompt
-# 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
-# 		doc = f.readlines()
-# 	print(f"DOC:{doc}")
-# 	print(f"DOC shape:{np.shape(doc)}")
-# 	st.text("Extracting keywords....")
-# 	kw_extractor = KeyBERT()
-# 	st.text("Keywords extracted!")
-# 	# keywords are in the format [[("keyword",prob),("keyword",prob),("keyword",prob)]]
-# 	extracted = kw_extractor.extract_keywords(doc)
-# 	print(f"EXTRACTED shape:{len(np.shape(extracted))}")
-# 	keywords_list = []
-# 	print(f"EXTRACTED :\n{extracted}")
-# 	for keyword in extracted:
-# 		print(f"KEYWORD:{keyword}, LENGTH:{len(keyword)}")
-# 		if len(keyword)> 0:
-# 			keywords_list.append(keyword[0])
-# 	keywords = " ".join(keywords_list)	
-# 	st.markdown(f"{keywords}")
-# 	keywords+= STYLES
-# 	print("KEYWORDS ARE....")
-# 	print(keywords)
-# 	# Summariser the transcribed text
-# 	text = " ".join(doc)
-# 	summariser = Summarizer()
-# 	print(f"TRANSCRIBED TEXT IS :{text}")
-# 	print("\n")
-# 	# edit ratio to change how much the text is summarised
-# 	summarised_doc = summariser(text,ratio=0.3)
-	
-# 	print(f"SUMMARISED TEXT IS :{summarised_doc}")
-# 	# Use Stable Diffusion to generate keywords
-# 	generate_img(prompt=keywords)
-# 	os.remove(TRANSCRIPTION_OUTPUT_PATH)
-# 	# look for output folder
