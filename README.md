@@ -17,14 +17,18 @@
     |       |   |
     |       |----environment.yaml(USE THIS TO CREATE YOUR CONDA ENV)
     |
-    |
+    |-------run_app.py(RUN THIS FILE TO START THE APP)
 
 ## How to run the demo
 1. Create a conda environment using the environment file in stable_diffusion with the command 
 
-    ```conda env create -f environment.yaml```
+    ```conda env create -f stable_diffusion/environment.yaml```
+    If you have issues with creating the conda environment with environment.yaml or are stuck in idependency hell/pip installing forever,
+    Please try using the environment_backup.yaml with the command
+
+    ```conda env create -f stable_diffusion/environment_backup.yaml```
 2. update the secrets.toml file in the .streamlit folder with your AssemblyAI API key
-3. down the stable diffusion weights with ```curl https://f004.backblazeb2.com/file/aai-blog-files/sd-v1-4.ckpt > sd-v1-4.ckpt```
+3. download the stable diffusion weights with ```curl https://f004.backblazeb2.com/file/aai-blog-files/sd-v1-4.ckpt > sd-v1-4.ckpt```
 4. move the sd-v1-4.ckpy weights to stable_diffusion/models/ldm/stable-diffusion-v/
 4. execute the run_app.py file in the terminal with ```python run_app.py```
 
