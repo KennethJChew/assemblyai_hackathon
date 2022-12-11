@@ -31,6 +31,7 @@ from pytorch_lightning import seed_everything
 from torch import autocast
 from torchvision.utils import make_grid
 from tqdm import tqdm, trange
+from stqdm import stqdm
 from transformers import logging
 from keybert import KeyBERT
 from summarizer import Summarizer
@@ -49,9 +50,10 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = int(st.sidebar.text_input('Rate', 16000))
 p = pyaudio.PyAudio()
-TRANSCRIPTION_OUTPUT_PATH = "../_transcription_output.txt"
+TRANSCRIPTION_OUTPUT_PATH = "../transcription_output.txt"
 STYLES=",chinese inkbrush,stylised,concept"
-CONNECTIONS = []
+# print(f"Resseting connections list")
+# CONNECTIONS = []
 #############
 # Functions #
 #############
@@ -67,62 +69,50 @@ def download_transcription():
 		# file_name=TRANSCRIPTION_OUTPUT_PATH,
 		file_name='transcription_output.txt',
 		mime='text/plain')
+	st.text("Transcription downloaded!")
+	os.remove('transcription.txt')
+
+	# st.write("Processing transcription....")
+	
+	# print("Checking for transcription_output.txt...")	
+	# if Path('../_transcription_output.txt').is_file():
+	# 	print("transcription output found")
+	# 	# read the transcipted prompt
+	# 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
+	# 		doc = f.readlines()
+	# 	print(f"DOC:{doc}")
+	# 	print(f"DOC shape:{np.shape(doc)}")
+	# 	kw_extractor = KeyBERT()
+	# 	# keywords are in the format [[("keyword",prob),("keyword",prob),("keyword",prob)]]
+	# 	extracted = kw_extractor.extract_keywords(doc)
+	# 	print(f"EXTRACTED shape:{len(np.shape(extracted))}")
+	# 	keywords_list = []
+	# 	print(f"EXTRACTED :\n{extracted}")
+	# 	for keyword in extracted:
+	# 		print(f"KEYWORD:{keyword}, LENGTH:{len(keyword)}")
+	# 		if len(keyword)> 0:
+	# 			keywords_list.append(keyword[0])
+	# 	keywords = " ".join(keywords_list)	
+	# 	keywords+= STYLES
+	# 	print("KEYWORDS ARE....")
+	# 	print(keywords)
+	# 	# Summariser the transcribed text
+	# 	text = " ".join(doc)
+	# 	summariser = Summarizer()
+	# 	print(f"TRANSCRIBED TEXT IS :{text}")
+	# 	print("\n")
+	# 	# edit ratio to change how much the text is summarised
+	# 	summarised_doc = summariser(text,ratio=0.3)
+		
+	# 	print(f"SUMMARISED TEXT IS :{summarised_doc}")
+	# 	# Use Stable Diffusion to generate keywords
+	# 	generate_img(prompt=keywords)
+	# 	os.remove(TRANSCRIPTION_OUTPUT_PATH)
 
 def stop_listening():
 	st.session_state['run'] = False
 
-async def send(_ws):
-	while st.session_state['run']:
-		try:
-			print("Trying to read the stream")
-			data = stream.read(FRAMES_PER_BUFFER)
-			data = base64.b64encode(data).decode("utf-8")
-			json_data = json.dumps({"audio_data":str(data)})
-			print("Sending the stream")
-			r = await _ws.send(json_data)
 
-		except websockets.exceptions.ConnectionClosedError as e:
-			print(e)
-			print("ConnectionClosedError while sending in a reconnected session.")
-			# await terminate_session(_ws)
-			assert e.code == 4008
-			break
-
-		except Exception as e:
-			print(e)
-			assert False, "Not a websocket 4008 error"
-
-		r = await asyncio.sleep(0.01)
-
-
-async def receive(_ws):
-	while st.session_state['run']:
-		try:
-			result_str = await _ws.recv()
-			result = json.loads(result_str)['text']
-
-			if json.loads(result_str)['message_type']=='FinalTranscript':
-				print(result)
-				st.session_state['text'] = result
-				st.write(st.session_state['text'])
-
-				transcription_txt = open('transcription.txt', 'a')
-				transcription_txt.write(st.session_state['text'])
-				transcription_txt.write(' ')
-				transcription_txt.close()
-	
-
-		except websockets.exceptions.ConnectionClosedError as e:
-			print(e)
-			print("ConnectionClosedError while receiving in a reconnected session")
-			# await terminate_session(_ws)
-			assert e.code == 4008
-			break
-
-		except Exception as e:
-			print("Other exception occured in a reconnected session...")
-			print(e)	
-			assert False, "Not a websocket 4008 error"
 
 async def terminate_session(socket):
 	try:
@@ -140,26 +130,29 @@ async def terminate_session(socket):
 
 # Send audio (Input) / Receive transcription (Output)
 async def send_receive():
-	URL = f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={RATE}"
-	# RECONNECT_URL = f"wss://api.assemblyai.com/v2/realtime/ws/{st.session_state['session_id']}"
-	print("Checking if session already exists...")
-	try:
+	if st.session_state['run']:
+		URL = f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={RATE}"
+		# RECONNECT_URL = f"wss://api.assemblyai.com/v2/realtime/ws/{st.session_state['session_id']}"
+		# print("Checking if session already exists...")
+		
 		print(f'Connecting websocket to url ${URL}')
+		CONNECTIONS = []
 		async with websockets.connect(
 			URL,
 			extra_headers=(("Authorization", st.secrets['api_key']),),
 			ping_interval=5,
 			ping_timeout=20
 		) as _ws:
-			CONNECTIONS.append(_ws)
-			print(CONNECTIONS)
-
+			
+			# CONNECTIONS.append(_ws)
+			# print(f"Connections:{CONNECTIONS}")
+			# st.session_state["socket"] = _ws
 			r = await asyncio.sleep(0.1)
 			print("Receiving messages ...")
 
 			session_begins = await _ws.recv()
 			session_begins_json = json.loads(session_begins)
-
+			print(f"PRINTING SESSION STATE:{st.session_state}")
 			if "session_id" in session_begins_json.keys():
 				st.session_state["session_id"] = session_begins_json["session_id"]
 				print(f"Session id is {st.session_state['session_id']}")
@@ -167,16 +160,67 @@ async def send_receive():
 				error_msg = session_begins_json["error"]
 				if "exceeded the number of allowed streams" in error_msg:
 					print(error_msg)
-					st.markdown(f'{error_msg}')
+					st.markdown(f'{error_msg}.\n Please try again in a few minutes when the stream expires and is reset.')
+
 			print("Sending messages ...")
+			async def send():
+				while st.session_state['run']:
+					try:
+						print("Trying to read the stream")
+						data = stream.read(FRAMES_PER_BUFFER)
+						data = base64.b64encode(data).decode("utf-8")
+						json_data = json.dumps({"audio_data":str(data)})
+						print("Sending the stream")
+						r = await _ws.send(json_data)
 
-			
-			
+					except websockets.exceptions.ConnectionClosedError as e:
+						print(e)
+						print("ConnectionClosedError while sending in a connected session.")
+						# await terminate_session(_ws)
+						assert e.code == 4008
+						break
 
-			send_result, receive_result = await asyncio.gather(send(_ws), receive(_ws))
-	except KeyboardInterrupt:
-		print("Keyboard interrupt! Terminating session...")
-		await terminate_session(_ws)
+					except Exception as e:
+						print(e)
+						assert False, "Not a websocket 4008 error"
+
+					r = await asyncio.sleep(0.01)
+
+
+			async def receive():
+				while st.session_state['run']:
+					try:
+						result_str = await _ws.recv()
+						result = json.loads(result_str)['text']
+
+						if json.loads(result_str)['message_type']=='FinalTranscript':
+							print(result)
+							st.session_state['text'] = result
+							st.write(st.session_state['text'])
+
+							transcription_txt = open('transcription.txt', 'a')
+							transcription_txt.write(st.session_state['text'])
+							transcription_txt.write(' ')
+							transcription_txt.close()
+				
+
+					except websockets.exceptions.ConnectionClosedError as e:
+						print(e)
+						print("ConnectionClosedError while receiving in a connected session")
+						# await terminate_session(_ws)
+						assert e.code == 4008
+						break
+
+					except Exception as e:
+						print("Other exception occured in a connected session...")
+						print(e)	
+						assert False, "Not a websocket 4008 error"
+			print("\n Awaiting results...")
+			send_result, receive_result = await asyncio.gather(send(), receive())
+			print("\n Results awaited!")
+
+			# await terminate_session(_ws)
+
 
 def chunk(it, size):
     it = iter(it)
@@ -364,7 +408,7 @@ def generate_img(prompt:str):
 		).format(time_taken)
 	)
 	
-	# st.stop()
+
 	
 ###########
 # Classes #
@@ -453,24 +497,32 @@ asyncio.run(send_receive())
 # if __name__ == "__main__":
 # 	generate_img()
 
-# Runs after the stop button is pressed
-# Checks for the presence of the transcription
+# Checks for the presence of the transcription file
 print("Checking for transcription.txt...")
 if Path('./transcription.txt').is_file():
 	print("transcription found")
-	st.markdown('### Download')
+	st.markdown(
+		'''
+		### Download
+		## Please do NOT change the default file name!
+		'''
+		)
 	download_transcription()
-	os.remove('transcription.txt')
+	# os.remove('transcription.txt')
+	
 
 print("Checking for transcription_output.txt...")	
-if Path('../_transcription_output.txt').is_file():
+if Path('../transcription_output.txt').is_file():
 	print("transcription output found")
+
 	# read the transcipted prompt
 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
 		doc = f.readlines()
 	print(f"DOC:{doc}")
 	print(f"DOC shape:{np.shape(doc)}")
+	st.text("Extracting keywords....")
 	kw_extractor = KeyBERT()
+	st.text("Keywords extracted!")
 	# keywords are in the format [[("keyword",prob),("keyword",prob),("keyword",prob)]]
 	extracted = kw_extractor.extract_keywords(doc)
 	print(f"EXTRACTED shape:{len(np.shape(extracted))}")
