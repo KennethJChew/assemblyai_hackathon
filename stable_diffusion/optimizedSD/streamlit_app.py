@@ -33,6 +33,7 @@ from torchvision.utils import make_grid
 from tqdm import tqdm, trange
 from transformers import logging
 from keybert import KeyBERT
+from summarizer import Summarizer
 
 ##################
 # Configurations #
@@ -48,9 +49,9 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = int(st.sidebar.text_input('Rate', 16000))
 p = pyaudio.PyAudio()
-TRANSCRIPTION_OUTPUT_PATH = "../transcription_output.txt"
+TRANSCRIPTION_OUTPUT_PATH = "../_transcription_output.txt"
 STYLES=",chinese inkbrush,stylised,concept"
-
+CONNECTIONS = []
 #############
 # Functions #
 #############
@@ -63,99 +64,191 @@ def download_transcription():
 	st.download_button(
 		label="Download transcription",
 		data=read_txt,
-		file_name=TRANSCRIPTION_OUTPUT_PATH,
-		# file_name='transcription_output.txt',
+		# file_name=TRANSCRIPTION_OUTPUT_PATH,
+		file_name='transcription_output.txt',
 		mime='text/plain')
 
 def stop_listening():
 	st.session_state['run'] = False
 
+async def terminate_session(socket):
+	try:
+		await socket.send(json.dumps({
+					"terminate_session":True
+				}))
+	except Exception as e:
+		print("Error occured while terminating sessions...")
+		print(e)
+	return True
+
 # Send audio (Input) / Receive transcription (Output)
 async def send_receive():
 	URL = f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={RATE}"
+	RECONNECT_URL = f"wss://api.assemblyai.com/v2/realtime/ws/{st.session_state['session_id']}"
 	# 4290d114-9578-4d4c-b44b-ac28e61393d9
 
 	print(f'Connecting websocket to url ${URL}')
+	try:
+		if "session_id" in st.session_state:
+			print("Session already exists!")
+			# print(st.session_state)
+			# print(CONNECTIONS)
+			# if len(CONNECTIONS) > 0:
+			# 	await terminate_session(CONNECTIONS[0])		
+			async with websockets.connect(
+				RECONNECT_URL,
+				extra_headers=(("Authorization", st.secrets['api_key']),),
+				ping_interval=5,
+				ping_timeout=20
+			) as _ws:
+				print(F"Reconnected to session {st.session_state['session_id']} !")
+				r = await asyncio.sleep(0.1)
+			print("Receiving messages ...")
 
-	async with websockets.connect(
-		URL,
-		extra_headers=(("Authorization", st.secrets['api_key']),),
-		ping_interval=5,
-		ping_timeout=20
-	) as _ws:
+			session_begins = await _ws.recv()
+			session_begins_json = json.loads(session_begins)
 
-		r = await asyncio.sleep(0.1)
-		print("Receiving messages ...")
+			if "session_id" in session_begins_json.keys():
+				st.session_state["session_id"] = session_begins_json["session_id"]
+				print(f"Session id is {st.session_state['session_id']}")
+			elif "error" in session_begins_json.keys():
+				error_msg = session_begins_json["error"]
+				if "exceeded the number of allowed streams" in error_msg:
+					print(error_msg)
+					st.markdown(f'{error_msg}')
+			print("Sending messages ...")
 
-		session_begins = await _ws.recv()
-		session_begins_json = json.loads(session_begins)
-
-		if "session_id" in session_begins_json.keys():
-			st.session_state["session_id"] = session_begins_json["session_id"]
-			print(f"Session id is {st.session_state['session_id']}")
-		elif "error" in session_begins_json.keys():
-			error_msg = session_begins_json["error"]
-			if "exceeded the number of allowed streams" in error_msg:
-				print(error_msg)
-				
-				# st.stop()
-		
-		# print(session_begins_json)
-
-		print("Sending messages ...")
-
-
-		async def send():
-			while st.session_state['run']:
-				try:
-					data = stream.read(FRAMES_PER_BUFFER)
-					data = base64.b64encode(data).decode("utf-8")
-					json_data = json.dumps({"audio_data":str(data)})
-					r = await _ws.send(json_data)
-
-				except websockets.exceptions.ConnectionClosedError as e:
-					print(e)
-					assert e.code == 4008
-					break
-
-				except Exception as e:
-					print(e)
-					assert False, "Not a websocket 4008 error"
-
-				r = await asyncio.sleep(0.01)
-
-
-		async def receive():
-			while st.session_state['run']:
-				try:
-					result_str = await _ws.recv()
-					result = json.loads(result_str)['text']
-
-					if json.loads(result_str)['message_type']=='FinalTranscript':
-						print(result)
-						st.session_state['text'] = result
-						st.write(st.session_state['text'])
-
-						transcription_txt = open('transcription.txt', 'a')
-						transcription_txt.write(st.session_state['text'])
-						transcription_txt.write(' ')
-						transcription_txt.close()
-
-
-				except websockets.exceptions.ConnectionClosedError as e:
-					print(e)
-					
-					assert e.code == 4008
-					break
-
-				except Exception as e:
-					print(e)	
-					assert False, "Not a websocket 4008 error"
 			
-		send_result, receive_result = await asyncio.gather(send(), receive())
-	# await _ws.send(json.dumps({
-	# 				"terminate_session":True
-	# 			}))
+			async def send():
+				while st.session_state['run']:
+					try:
+						data = stream.read(FRAMES_PER_BUFFER)
+						data = base64.b64encode(data).decode("utf-8")
+						json_data = json.dumps({"audio_data":str(data)})
+						r = await _ws.send(json_data)
+
+					except websockets.exceptions.ConnectionClosedError as e:
+						print(e)
+						assert e.code == 4008
+						break
+
+					except Exception as e:
+						print(e)
+						assert False, "Not a websocket 4008 error"
+
+					r = await asyncio.sleep(0.01)
+
+
+			async def receive():
+				while st.session_state['run']:
+					try:
+						result_str = await _ws.recv()
+						result = json.loads(result_str)['text']
+
+						if json.loads(result_str)['message_type']=='FinalTranscript':
+							print(result)
+							st.session_state['text'] = result
+							st.write(st.session_state['text'])
+
+							transcription_txt = open('transcription.txt', 'a')
+							transcription_txt.write(st.session_state['text'])
+							transcription_txt.write(' ')
+							transcription_txt.close()
+				
+
+					except websockets.exceptions.ConnectionClosedError as e:
+						print(e)
+						
+						assert e.code == 4008
+						break
+
+					except Exception as e:
+						print(e)	
+						assert False, "Not a websocket 4008 error"
+				await terminate_session(_ws)
+			
+
+			send_result, receive_result = await asyncio.gather(send(), receive())
+		# If we do NOT have an existing connection
+		else:
+			async with websockets.connect(
+				URL,
+				extra_headers=(("Authorization", st.secrets['api_key']),),
+				ping_interval=5,
+				ping_timeout=20
+			) as _ws:
+				CONNECTIONS.append(_ws)
+				print(CONNECTIONS)
+
+				r = await asyncio.sleep(0.1)
+				print("Receiving messages ...")
+
+				session_begins = await _ws.recv()
+				session_begins_json = json.loads(session_begins)
+
+				if "session_id" in session_begins_json.keys():
+					st.session_state["session_id"] = session_begins_json["session_id"]
+					print(f"Session id is {st.session_state['session_id']}")
+				elif "error" in session_begins_json.keys():
+					error_msg = session_begins_json["error"]
+					if "exceeded the number of allowed streams" in error_msg:
+						print(error_msg)
+						st.markdown(f'{error_msg}')
+				print("Sending messages ...")
+
+				
+				async def send():
+					while st.session_state['run']:
+						try:
+							data = stream.read(FRAMES_PER_BUFFER)
+							data = base64.b64encode(data).decode("utf-8")
+							json_data = json.dumps({"audio_data":str(data)})
+							r = await _ws.send(json_data)
+
+						except websockets.exceptions.ConnectionClosedError as e:
+							print(e)
+							assert e.code == 4008
+							break
+
+						except Exception as e:
+							print(e)
+							assert False, "Not a websocket 4008 error"
+
+						r = await asyncio.sleep(0.01)
+
+
+				async def receive():
+					while st.session_state['run']:
+						try:
+							result_str = await _ws.recv()
+							result = json.loads(result_str)['text']
+
+							if json.loads(result_str)['message_type']=='FinalTranscript':
+								print(result)
+								st.session_state['text'] = result
+								st.write(st.session_state['text'])
+
+								transcription_txt = open('transcription.txt', 'a')
+								transcription_txt.write(st.session_state['text'])
+								transcription_txt.write(' ')
+								transcription_txt.close()
+					
+
+						except websockets.exceptions.ConnectionClosedError as e:
+							print(e)
+							
+							assert e.code == 4008
+							break
+
+						except Exception as e:
+							print(e)	
+							assert False, "Not a websocket 4008 error"
+					await terminate_session(_ws)
+				
+
+				send_result, receive_result = await asyncio.gather(send(), receive())
+	except KeyboardInterrupt:
+		await terminate_session(_ws)
 
 def chunk(it, size):
     it = iter(it)
@@ -342,8 +435,8 @@ def generate_img(prompt:str):
 			+ seeds[:-1]
 		).format(time_taken)
 	)
-	os.remove('../transcription_output.txt')
-	st.stop()
+	
+	# st.stop()
 	
 ###########
 # Classes #
@@ -409,6 +502,10 @@ with st.expander('About this App'):
 	then has its keywords extracted and an image is then generated using the extracted keywords
 	
 	Libraries used:
+	- `stable-diffusion` - text to image generator
+	- `KeyBERT` - keyword extraction
+	- `AssemblyAI` - Real time transciption
+
 	- `streamlit` - web framework
 	- `pyaudio` - a Python library providing bindings to [PortAudio](http://www.portaudio.com/) (cross-platform audio processing library)
 	- `websockets` - allows interaction with the API
@@ -426,43 +523,48 @@ col2.button('Stop', on_click=stop_listening)
 asyncio.run(send_receive())
 
 # if __name__ == "__main__":
-# 	print("Dsadas")
 # 	generate_img()
+
 # Runs after the stop button is pressed
 # Checks for the presence of the transcription
 print("Checking for transcription.txt...")
-if Path('transcription.txt').is_file():
+if Path('./transcription.txt').is_file():
+	print("transcription found")
 	st.markdown('### Download')
 	download_transcription()
 	os.remove('transcription.txt')
+
+print("Checking for transcription_output.txt...")	
+if Path('../_transcription_output.txt').is_file():
+	print("transcription output found")
 	# read the transcipted prompt
 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
 		doc = f.readlines()
+	print(f"DOC:{doc}")
+	print(f"DOC shape:{np.shape(doc)}")
 	kw_extractor = KeyBERT()
-	# keywords are in the format [("keyword",prob),("keyword",prob),("keyword",prob)]
+	# keywords are in the format [[("keyword",prob),("keyword",prob),("keyword",prob)]]
 	extracted = kw_extractor.extract_keywords(doc)
+	print(f"EXTRACTED shape:{len(np.shape(extracted))}")
 	keywords_list = []
+	print(f"EXTRACTED :\n{extracted}")
 	for keyword in extracted:
-		keywords_list.append(keyword[0])
+		print(f"KEYWORD:{keyword}, LENGTH:{len(keyword)}")
+		if len(keyword)> 0:
+			keywords_list.append(keyword[0])
 	keywords = " ".join(keywords_list)	
 	keywords+= STYLES
 	print("KEYWORDS ARE....")
 	print(keywords)
-	generate_img(prompt=keywords)
-
-# print("Checking for transcription_output.txt...")	
-# if Path('../transcription_output.txt').is_file():
-# 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
-# 		doc = f.readlines()
-# 	kw_extractor = KeyBERT()
-# 	# keywords are in the format [("keyword",prob),("keyword",prob),("keyword",prob)]
-# 	extracted = kw_extractor.extract_keywords(doc)
-# 	keywords_list = []
-# 	for keyword in extracted:
-# 		keywords_list.append(keyword[0])
-# 	keywords = " ".join(keywords_list)	
-# 	keywords+= STYLES
-# 	print("KEYWORDS ARE....")
-# 	print(keywords)
-# 	generate_img(prompt=keywords)
+	# Summariser the transcribed text
+	text = " ".join(doc)
+	summariser = Summarizer()
+	print(f"TRANSCRIBED TEXT IS :{text}")
+	print("\n")
+	# edit ratio to change how much the text is summarised
+	summarised_doc = summariser(text,ratio=0.3)
 	
+	print(f"SUMMARISED TEXT IS :{summarised_doc}")
+	# Use Stable Diffusion to generate keywords
+	generate_img(prompt=keywords)
+	os.remove(TRANSCRIPTION_OUTPUT_PATH)
