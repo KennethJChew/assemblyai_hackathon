@@ -16,6 +16,7 @@ dependencies:
   - pyaudio
   - pathlib
   - pip:
+    - stqdm
     - websockets
     - asyncio
     - pybase64

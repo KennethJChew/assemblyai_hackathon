@@ -26,7 +26,7 @@ from einops import rearrange
 from ldm.util import instantiate_from_config
 from omegaconf import OmegaConf
 from optimizedSD.optimUtils import logger, split_weighted_subprompts
-from PIL import Image
+from PIL import Image,ImageDraw
 from pytorch_lightning import seed_everything
 from torch import autocast
 from torchvision.utils import make_grid
@@ -35,6 +35,8 @@ from stqdm import stqdm
 from transformers import logging
 from keybert import KeyBERT
 from summarizer import Summarizer
+import textwrap
+
 
 ##################
 # Configurations #
@@ -50,8 +52,10 @@ FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = int(st.sidebar.text_input('Rate', 16000))
 p = pyaudio.PyAudio()
-TRANSCRIPTION_OUTPUT_PATH = "../transcription_output.txt"
-STYLES=",chinese inkbrush,stylised,concept"
+TRANSCRIPTION_PATH = "./transcription.txt"
+TRANSCRIPTION_OUTPUT_PATH = "./transcription_output.txt"
+SUMMARISED_TEXT = "./summarised.txt"
+STYLES=",chinese_inkbrush,stylised,concept"
 # print(f"Resseting connections list")
 # CONNECTIONS = []
 #############
@@ -62,15 +66,16 @@ def start_listening():
 	st.session_state['run'] = True
 
 def download_transcription():
-	read_txt = open('transcription.txt', 'r')
+	read_txt = open(TRANSCRIPTION_PATH, 'r')
 	st.download_button(
 		label="Download transcription",
 		data=read_txt,
 		# file_name=TRANSCRIPTION_OUTPUT_PATH,
 		file_name='transcription_output.txt',
 		mime='text/plain')
-	st.text("Transcription downloaded!")
-	os.remove('transcription.txt')
+	
+	# st.text("Transcription downloaded!")
+	# os.remove('transcription.txt')
 
 	# st.write("Processing transcription....")
 	
@@ -408,7 +413,72 @@ def generate_img(prompt:str):
 		).format(time_taken)
 	)
 	
+def prep_generation():
+	print("Checking for transcription_output.txt...")	
+	if Path(TRANSCRIPTION_OUTPUT_PATH).is_file():
+		print("transcription output found")
 
+		# read the transcipted prompt
+		with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
+			doc = f.readlines()
+		print(f"DOC:{doc}")
+		print(f"DOC shape:{np.shape(doc)}")
+		st.text("Extracting keywords....")
+		kw_extractor = KeyBERT()
+		st.text("Keywords extracted!")
+		# keywords are in the format [[("keyword",prob),("keyword",prob),("keyword",prob)]]
+		extracted = kw_extractor.extract_keywords(doc)
+		print(f"EXTRACTED shape:{len(np.shape(extracted))}")
+		keywords_list = []
+		print(f"EXTRACTED :\n{extracted}")
+		for keyword in extracted:
+			print(f"KEYWORD:{keyword}, LENGTH:{len(keyword)}")
+			if len(keyword)> 0:
+				keywords_list.append(keyword[0])
+		keywords = " ".join(keywords_list)	
+		st.text(f"keywords are : {keywords}")
+		keywords+= STYLES
+		print("KEYWORDS ARE....")
+		print(keywords)
+		# Summariser the transcribed text
+		text = " ".join(doc)
+		summariser = Summarizer()
+		
+		print(f"TRANSCRIBED TEXT IS :{text}")
+		print("\n")
+
+		# edit ratio to change how much the text is summarised
+		summarised_doc = summariser(text,ratio=0.3)
+		with open(SUMMARISED_TEXT,"w") as file:
+			file.write(summarised_doc)
+
+		print(f"SUMMARISED TEXT IS :{summarised_doc}")
+		st.markdown(f"Summarised text is :\n{summarised_doc}")
+		# Use Stable Diffusion to generate keywords
+		generate_img(prompt=keywords)
+		os.remove(TRANSCRIPTION_OUTPUT_PATH)
+		# look for output folder
+		# keywords = "transcribe multimodal transcription text speech"
+		replaced_keywords = keywords.replace(" ","_")
+		# styles = ",chinese_inkbrush,stylised,concept"
+		output_folder = replaced_keywords
+		# Get all the generated images
+		infographics = []
+		for root,dirs,files in os.walk(f"./stable_diffusion/outputs/txt2img-samples/{output_folder}"):
+			for file in files:
+				filename = "./"+root+"/"+file
+				infographics.append(filename)
+		text_list = textwrap.wrap(summarised_doc,width=40)
+		base_img = Image.new('RGB', (1024, 1024))
+		d = ImageDraw.Draw(base_img)
+		infographic = Image.open(infographics[0])
+		text = ""
+		for each in text_list:
+			text += each+"\n"
+		d.multiline_text((20,20),text=text,anchor="la", fill=(255, 0, 0))
+		base_img.paste(infographic,(500,20))
+		base_img.save("generated_infographic.png")
+		st.write(f"Generated infographic saved to base folder!")
 	
 ###########
 # Classes #
@@ -417,7 +487,7 @@ def generate_img(prompt:str):
 class OPT():
 	def __init__(self,prompt="Samurai fighing dragon in an abandoned battlefield, inkbrush chinese") -> None:
 		self.prompt = prompt
-		self.outdir = "outputs/txt2img-samples"
+		self.outdir = "./stable_diffusion/outputs/txt2img-samples"
 		self.skip_grid = False
 		self.skip_save = False
 		self.ddim_steps = 50
@@ -430,13 +500,13 @@ class OPT():
 		self.W = 512
 		self.C = 4
 		self.f = 8
-		self.n_samples = 5
+		self.n_samples = 1
 		self.n_rows = 0
 		self.scale = 7.5
 		self.device = "cuda"
 		self.from_file = None
-		self.config = "optimizedSD/v1-inference.yaml"
-		self.ckpt = "models/ldm/stable-diffusion-v1/sd-v1-4.ckpt"
+		self.config = "./stable_diffusion/optimizedSD/v1-inference.yaml"
+		self.ckpt = "./stable_diffusion/models/ldm/stable-diffusion-v1/sd-v1-4.ckpt"
 		self.seed = 42
 		self.unet_bs = 1
 		self.turbo = False
@@ -494,12 +564,9 @@ col2.button('Stop', on_click=stop_listening)
 # Run
 asyncio.run(send_receive())
 
-# if __name__ == "__main__":
-# 	generate_img()
-
 # Checks for the presence of the transcription file
 print("Checking for transcription.txt...")
-if Path('./transcription.txt').is_file():
+if Path(TRANSCRIPTION_PATH).is_file():
 	print("transcription found")
 	st.markdown(
 		'''
@@ -507,44 +574,49 @@ if Path('./transcription.txt').is_file():
 		## Please do NOT change the default file name!
 		'''
 		)
+	print("running download transcription")
 	download_transcription()
-	# os.remove('transcription.txt')
-	
+	os.remove(TRANSCRIPTION_PATH)
+	# st.button("Start Image generation",on_click=prep_generation())
 
-print("Checking for transcription_output.txt...")	
-if Path('../transcription_output.txt').is_file():
-	print("transcription output found")
+st.button("Click this after you have downloaded your transcription",on_click=prep_generation())
 
-	# read the transcipted prompt
-	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
-		doc = f.readlines()
-	print(f"DOC:{doc}")
-	print(f"DOC shape:{np.shape(doc)}")
-	st.text("Extracting keywords....")
-	kw_extractor = KeyBERT()
-	st.text("Keywords extracted!")
-	# keywords are in the format [[("keyword",prob),("keyword",prob),("keyword",prob)]]
-	extracted = kw_extractor.extract_keywords(doc)
-	print(f"EXTRACTED shape:{len(np.shape(extracted))}")
-	keywords_list = []
-	print(f"EXTRACTED :\n{extracted}")
-	for keyword in extracted:
-		print(f"KEYWORD:{keyword}, LENGTH:{len(keyword)}")
-		if len(keyword)> 0:
-			keywords_list.append(keyword[0])
-	keywords = " ".join(keywords_list)	
-	keywords+= STYLES
-	print("KEYWORDS ARE....")
-	print(keywords)
-	# Summariser the transcribed text
-	text = " ".join(doc)
-	summariser = Summarizer()
-	print(f"TRANSCRIBED TEXT IS :{text}")
-	print("\n")
-	# edit ratio to change how much the text is summarised
-	summarised_doc = summariser(text,ratio=0.3)
+# print("Checking for transcription_output.txt...")	
+# if Path(TRANSCRIPTION_OUTPUT_PATH).is_file():
+# 	print("transcription output found")
+
+# 	# read the transcipted prompt
+# 	with open(TRANSCRIPTION_OUTPUT_PATH,"r") as f:
+# 		doc = f.readlines()
+# 	print(f"DOC:{doc}")
+# 	print(f"DOC shape:{np.shape(doc)}")
+# 	st.text("Extracting keywords....")
+# 	kw_extractor = KeyBERT()
+# 	st.text("Keywords extracted!")
+# 	# keywords are in the format [[("keyword",prob),("keyword",prob),("keyword",prob)]]
+# 	extracted = kw_extractor.extract_keywords(doc)
+# 	print(f"EXTRACTED shape:{len(np.shape(extracted))}")
+# 	keywords_list = []
+# 	print(f"EXTRACTED :\n{extracted}")
+# 	for keyword in extracted:
+# 		print(f"KEYWORD:{keyword}, LENGTH:{len(keyword)}")
+# 		if len(keyword)> 0:
+# 			keywords_list.append(keyword[0])
+# 	keywords = " ".join(keywords_list)	
+# 	st.markdown(f"{keywords}")
+# 	keywords+= STYLES
+# 	print("KEYWORDS ARE....")
+# 	print(keywords)
+# 	# Summariser the transcribed text
+# 	text = " ".join(doc)
+# 	summariser = Summarizer()
+# 	print(f"TRANSCRIBED TEXT IS :{text}")
+# 	print("\n")
+# 	# edit ratio to change how much the text is summarised
+# 	summarised_doc = summariser(text,ratio=0.3)
 	
-	print(f"SUMMARISED TEXT IS :{summarised_doc}")
-	# Use Stable Diffusion to generate keywords
-	generate_img(prompt=keywords)
-	os.remove(TRANSCRIPTION_OUTPUT_PATH)
+# 	print(f"SUMMARISED TEXT IS :{summarised_doc}")
+# 	# Use Stable Diffusion to generate keywords
+# 	generate_img(prompt=keywords)
+# 	os.remove(TRANSCRIPTION_OUTPUT_PATH)
+# 	# look for output folder
