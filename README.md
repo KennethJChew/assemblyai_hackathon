@@ -1,6 +1,8 @@
 # ASSEMBLYAI HACKATHON
 
 ## About the project
+Checkout generated_infographic.png for an example of the generated infographic.It ain't pretty, but it works :)
+
 ## File structure
     ------  streamlit
     |       |---- secrets.toml(update with YOUR assembyAI API KEY)
@@ -42,3 +44,4 @@ If you get an error, pleaae wait a while before rerunning the app and trying aga
 5. Press the "Click this after you have downloaded your transcription" button
 6. Wait for the image to be generated.(Refer to your terminal for progress)
 7. The generated images will be in stable_diffusion/outputs/"keywords extracted"
+
