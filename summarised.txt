@@ -1,1 +1,1 @@
-Clicked now how this works is that this is actually using assembly AI's Realtime Speechtotext Transcription service. So what I'm speaking is actually being displayed on screen with a slight.
+And assembly AI's real time transcription service will just like. So once you have spoken enough and you want to just generate.

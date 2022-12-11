@@ -32,8 +32,9 @@ Checkout generated_infographic.png for an example of the generated infographic.I
 2. update the secrets.toml file in the .streamlit folder with your AssemblyAI API key
 3. download the stable diffusion weights with ```curl https://f004.backblazeb2.com/file/aai-blog-files/sd-v1-4.ckpt > sd-v1-4.ckpt```
 4. move the sd-v1-4.ckpy weights to stable_diffusion/models/ldm/stable-diffusion-v/
-4. execute the run_app.py file in the terminal with ```python run_app.py```
-
+5. execute the run_app.py file in the terminal with ```python run_app.py```
+6. You can change the style of the generated image by editing the variable STYLES in stable_diffusion/optimizedSD/streamlit_app.py
+7. You can also change other parameters by changing the init variable in the class OPT in stable_diffusion/optimizedSD/streamlit_app.py
 
 ## INSTRUCTIONS ON USING THE STREAM LIT APP
 1. Press the Start button to start the real time transcription
