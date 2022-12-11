@@ -71,11 +71,68 @@ def download_transcription():
 def stop_listening():
 	st.session_state['run'] = False
 
+async def send(_ws):
+	while st.session_state['run']:
+		try:
+			print("Trying to read the stream")
+			data = stream.read(FRAMES_PER_BUFFER)
+			data = base64.b64encode(data).decode("utf-8")
+			json_data = json.dumps({"audio_data":str(data)})
+			print("Sending the stream")
+			r = await _ws.send(json_data)
+
+		except websockets.exceptions.ConnectionClosedError as e:
+			print(e)
+			print("ConnectionClosedError while sending in a reconnected session.")
+			# await terminate_session(_ws)
+			assert e.code == 4008
+			break
+
+		except Exception as e:
+			print(e)
+			assert False, "Not a websocket 4008 error"
+
+		r = await asyncio.sleep(0.01)
+
+
+async def receive(_ws):
+	while st.session_state['run']:
+		try:
+			result_str = await _ws.recv()
+			result = json.loads(result_str)['text']
+
+			if json.loads(result_str)['message_type']=='FinalTranscript':
+				print(result)
+				st.session_state['text'] = result
+				st.write(st.session_state['text'])
+
+				transcription_txt = open('transcription.txt', 'a')
+				transcription_txt.write(st.session_state['text'])
+				transcription_txt.write(' ')
+				transcription_txt.close()
+	
+
+		except websockets.exceptions.ConnectionClosedError as e:
+			print(e)
+			print("ConnectionClosedError while receiving in a reconnected session")
+			# await terminate_session(_ws)
+			assert e.code == 4008
+			break
+
+		except Exception as e:
+			print("Other exception occured in a reconnected session...")
+			print(e)	
+			assert False, "Not a websocket 4008 error"
+
 async def terminate_session(socket):
 	try:
-		await socket.send(json.dumps({
+		print("Terminating session...")
+		termination = await socket.send(json.dumps({
 					"terminate_session":True
 				}))
+		print(f"Termination...:{termination}")
+		termination_status = await socket.recv()
+		print(f"Termination status:{termination_status}")
 	except Exception as e:
 		print("Error occured while terminating sessions...")
 		print(e)
@@ -84,25 +141,20 @@ async def terminate_session(socket):
 # Send audio (Input) / Receive transcription (Output)
 async def send_receive():
 	URL = f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={RATE}"
-	RECONNECT_URL = f"wss://api.assemblyai.com/v2/realtime/ws/{st.session_state['session_id']}"
-	# 4290d114-9578-4d4c-b44b-ac28e61393d9
-
-	print(f'Connecting websocket to url ${URL}')
+	# RECONNECT_URL = f"wss://api.assemblyai.com/v2/realtime/ws/{st.session_state['session_id']}"
+	print("Checking if session already exists...")
 	try:
-		if "session_id" in st.session_state:
-			print("Session already exists!")
-			# print(st.session_state)
-			# print(CONNECTIONS)
-			# if len(CONNECTIONS) > 0:
-			# 	await terminate_session(CONNECTIONS[0])		
-			async with websockets.connect(
-				RECONNECT_URL,
-				extra_headers=(("Authorization", st.secrets['api_key']),),
-				ping_interval=5,
-				ping_timeout=20
-			) as _ws:
-				print(F"Reconnected to session {st.session_state['session_id']} !")
-				r = await asyncio.sleep(0.1)
+		print(f'Connecting websocket to url ${URL}')
+		async with websockets.connect(
+			URL,
+			extra_headers=(("Authorization", st.secrets['api_key']),),
+			ping_interval=5,
+			ping_timeout=20
+		) as _ws:
+			CONNECTIONS.append(_ws)
+			print(CONNECTIONS)
+
+			r = await asyncio.sleep(0.1)
 			print("Receiving messages ...")
 
 			session_begins = await _ws.recv()
@@ -119,135 +171,11 @@ async def send_receive():
 			print("Sending messages ...")
 
 			
-			async def send():
-				while st.session_state['run']:
-					try:
-						data = stream.read(FRAMES_PER_BUFFER)
-						data = base64.b64encode(data).decode("utf-8")
-						json_data = json.dumps({"audio_data":str(data)})
-						r = await _ws.send(json_data)
-
-					except websockets.exceptions.ConnectionClosedError as e:
-						print(e)
-						assert e.code == 4008
-						break
-
-					except Exception as e:
-						print(e)
-						assert False, "Not a websocket 4008 error"
-
-					r = await asyncio.sleep(0.01)
-
-
-			async def receive():
-				while st.session_state['run']:
-					try:
-						result_str = await _ws.recv()
-						result = json.loads(result_str)['text']
-
-						if json.loads(result_str)['message_type']=='FinalTranscript':
-							print(result)
-							st.session_state['text'] = result
-							st.write(st.session_state['text'])
-
-							transcription_txt = open('transcription.txt', 'a')
-							transcription_txt.write(st.session_state['text'])
-							transcription_txt.write(' ')
-							transcription_txt.close()
-				
-
-					except websockets.exceptions.ConnectionClosedError as e:
-						print(e)
-						
-						assert e.code == 4008
-						break
-
-					except Exception as e:
-						print(e)	
-						assert False, "Not a websocket 4008 error"
-				await terminate_session(_ws)
 			
 
-			send_result, receive_result = await asyncio.gather(send(), receive())
-		# If we do NOT have an existing connection
-		else:
-			async with websockets.connect(
-				URL,
-				extra_headers=(("Authorization", st.secrets['api_key']),),
-				ping_interval=5,
-				ping_timeout=20
-			) as _ws:
-				CONNECTIONS.append(_ws)
-				print(CONNECTIONS)
-
-				r = await asyncio.sleep(0.1)
-				print("Receiving messages ...")
-
-				session_begins = await _ws.recv()
-				session_begins_json = json.loads(session_begins)
-
-				if "session_id" in session_begins_json.keys():
-					st.session_state["session_id"] = session_begins_json["session_id"]
-					print(f"Session id is {st.session_state['session_id']}")
-				elif "error" in session_begins_json.keys():
-					error_msg = session_begins_json["error"]
-					if "exceeded the number of allowed streams" in error_msg:
-						print(error_msg)
-						st.markdown(f'{error_msg}')
-				print("Sending messages ...")
-
-				
-				async def send():
-					while st.session_state['run']:
-						try:
-							data = stream.read(FRAMES_PER_BUFFER)
-							data = base64.b64encode(data).decode("utf-8")
-							json_data = json.dumps({"audio_data":str(data)})
-							r = await _ws.send(json_data)
-
-						except websockets.exceptions.ConnectionClosedError as e:
-							print(e)
-							assert e.code == 4008
-							break
-
-						except Exception as e:
-							print(e)
-							assert False, "Not a websocket 4008 error"
-
-						r = await asyncio.sleep(0.01)
-
-
-				async def receive():
-					while st.session_state['run']:
-						try:
-							result_str = await _ws.recv()
-							result = json.loads(result_str)['text']
-
-							if json.loads(result_str)['message_type']=='FinalTranscript':
-								print(result)
-								st.session_state['text'] = result
-								st.write(st.session_state['text'])
-
-								transcription_txt = open('transcription.txt', 'a')
-								transcription_txt.write(st.session_state['text'])
-								transcription_txt.write(' ')
-								transcription_txt.close()
-					
-
-						except websockets.exceptions.ConnectionClosedError as e:
-							print(e)
-							
-							assert e.code == 4008
-							break
-
-						except Exception as e:
-							print(e)	
-							assert False, "Not a websocket 4008 error"
-					await terminate_session(_ws)
-				
-
-				send_result, receive_result = await asyncio.gather(send(), receive())
+			send_result, receive_result = await asyncio.gather(send(_ws), receive(_ws))
 	except KeyboardInterrupt:
+		print("Keyboard interrupt! Terminating session...")
 		await terminate_session(_ws)
 
 def chunk(it, size):
