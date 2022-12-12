@@ -18,7 +18,7 @@ Checkout generated_infographic.png for an example of the generated infographic.I
     |       |   |   |   |---stable-diffusion-v1(MOVE THE sd-v1-4.ckpt weights HERE)
     |       |   |
     |       |----environment.yaml(USE THIS TO CREATE YOUR CONDA ENV)
-    |
+    |-------transcription_output.txt(DOWNLOAD THE FILE HERE)
     |-------run_app.py(RUN THIS FILE TO START THE APP)
 
 ## How to run the demo
@@ -42,6 +42,7 @@ Checkout generated_infographic.png for an example of the generated infographic.I
 If you get an error, pleaae wait a while before rerunning the app and trying again. You probably have too many streams active.
 3. Press the Stop button when you are done.
 4. Press the Download button to download your transcibed speech.(DO NOT CHANGE THE DEFAULT FILE NAME of transcription_output.txt)
+5. DOWNLOAD THE transcription_output.txt FILE into the main project folder
 5. Press the "Click this after you have downloaded your transcription" button
 6. Wait for the image to be generated.(Refer to your terminal for progress)
 7. The generated images will be in stable_diffusion/outputs/"keywords extracted"
